@@ -89,6 +89,7 @@
   </div>
 </div>
 
+
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
 const video     = document.getElementById('video');
@@ -309,8 +310,11 @@ async function loop() {
           if (frameCount - state.lastFrame > 10) faceStates.delete(key);
         });
       }
-    } catch(e) { console.error(e); }
-    detecting = false;
+    } catch(e) { 
+      console.error(e); 
+    } finally {
+      detecting = false;
+    }
   } else {
     // 検出待ちの間も前フレームのロゴを描き続ける
     if (overlayEnabled) {
