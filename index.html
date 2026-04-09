@@ -262,10 +262,25 @@ async function loop() {
       const detections = await faceapi.detectAllFaces(
         canvas,
         new faceapi.TinyFaceDetectorOptions({
-          inputSize: 416,
-          scoreThreshold: 0.3
+          inputSize: 608,
+          scoreThreshold: 0.2
         })
       );
+
+      // デバッグ: 検出数を画面に表示
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(10, 10, 220, 30);
+      ctx.fillStyle = '#00ffcc';
+      ctx.font = '14px Courier New';
+      ctx.fillText(`検出数: ${detections.length} / フレーム: ${frameCount}`, 18, 30);
+
+      // デバッグ: 検出した顔に赤枠を表示
+      detections.forEach(det => {
+        const box = det.box;
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(box.x, box.y, box.width, box.height);
+      });
 
       if (overlayEnabled && detections.length > 0) {
         detections.forEach((det, i) => {
@@ -290,7 +305,7 @@ async function loop() {
           if (frameCount - state.lastFrame > 10) faceStates.delete(key);
         });
       }
-    } catch(e) {}
+    } catch(e) { console.error(e); }
     detecting = false;
   } else {
     // 検出待ちの間も前フレームのロゴを描き続ける
