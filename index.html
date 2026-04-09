@@ -15,7 +15,6 @@
     min-height: 100dvh;
     font-family: 'Courier New', monospace;
     color: #00ffcc;
-    overflow: hidden;
   }
   #container { position: relative; width: 100%; }
   video { display: none; }
@@ -28,11 +27,10 @@
     background: rgba(0,0,0,0.7); color: #00ffcc;
     border: 1px solid #00ffcc44; border-radius: 6px;
     padding: 8px 16px; font-family: 'Courier New', monospace;
-    font-size: 13px; cursor: pointer; letter-spacing: 0.05em;
+    font-size: 13px; cursor: pointer;
   }
-  .btn:active { background: rgba(0,255,204,0.15); }
   .btn.stop { border-color: #ff4466aa; color: #ff4466; }
-  #status { text-align: center; font-size: 12px; color: #00ffcc88; padding: 8px; letter-spacing: 0.1em; }
+  #status { text-align: center; font-size: 12px; color: #00ffcc88; padding: 8px; }
   #start-screen {
     display: flex; flex-direction: column; align-items: center;
     gap: 20px; padding: 40px 20px; max-width: 480px; text-align: center;
@@ -43,7 +41,7 @@
   .start-btn {
     background: transparent; color: #00ffcc; border: 1px solid #00ffcc;
     border-radius: 8px; padding: 14px 32px; font-family: 'Courier New', monospace;
-    font-size: 15px; cursor: pointer; letter-spacing: 0.1em;
+    font-size: 15px; cursor: pointer;
   }
   .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
@@ -74,29 +72,26 @@
   <div id="status">AIモデルを読み込んでいます</div>
   <div class="note">
     ボタンを押すとキャプチャする画面を選べます。<br>
-    顔が映っているタブや画面を選んでください。<br>
     PCのChromeで動作します。
   </div>
 </div>
 
 <div id="container" style="display:none">
-  <video id="video" autoplay playsinline muted style="width:100%;display:block;"></video>
-  <canvas id="canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></canvas>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
   <div id="ui">
     <button class="btn" onclick="toggleOverlay()">ロゴ ON/OFF</button>
-    <button class="btn" onclick="toggleScan()">スキャン ON/OFF</button>
     <button class="btn stop" onclick="stopCapture()">停止</button>
   </div>
 </div>
 
-
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
-const video     = document.getElementById('video');
-const canvas    = document.getElementById('canvas');
-const ctx       = canvas.getContext('2d');
-const status    = document.getElementById('status');
-const startBtn  = document.getElementById('startBtn');
+const video    = document.getElementById('video');
+const canvas   = document.getElementById('canvas');
+const ctx      = canvas.getContext('2d', { willReadFrequently: true });
+const status   = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
 
 // ロゴ準備
 const svgEl  = document.getElementById('logo-static');
@@ -104,7 +99,6 @@ const svgStr = new XMLSerializer().serializeToString(svgEl);
 const svgB64 = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
 const logoImg = new Image();
 logoImg.src = svgB64;
-
 const offCanvas = document.getElementById('logo-canvas');
 const offCtx    = offCanvas.getContext('2d');
 const LOGO_SIZE = 400;
@@ -112,43 +106,26 @@ offCanvas.width  = LOGO_SIZE;
 offCanvas.height = LOGO_SIZE;
 
 let overlayEnabled = true;
-let scanEnabled    = true;
-let angle          = 0;
-let stream         = null;
-let frameCount     = 0;
-const faceStates   = new Map();
+let angle = 0;
+let stream = null;
+let frameCount = 0;
+const faceStates = new Map();
+let lastDetections = [];
 
-// ── face-api.js モデル読み込み ──
-const MODEL_URL = '.';
-
-async function loadModels() {
-  status.textContent = 'AIモデルを読み込み中…';
-  try {
-    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-    status.textContent = 'PCのChromeで動作します';
-    startBtn.disabled = false;
-    startBtn.textContent = '画面キャプチャを開始';
-  } catch(e) {
-    status.textContent = 'モデルの読み込みに失敗しました';
-  }
-}
-loadModels();
-
-// ── ロゴ描画 ──
+// ロゴ描画
 function buildLogoFrame() {
-  const s = LOGO_SIZE;
-  offCtx.clearRect(0, 0, s, s);
-  if (logoImg.complete) offCtx.drawImage(logoImg, 0, 0, s, s);
+  offCtx.clearRect(0, 0, LOGO_SIZE, LOGO_SIZE);
+  if (logoImg.complete) offCtx.drawImage(logoImg, 0, 0, LOGO_SIZE, LOGO_SIZE);
   offCtx.save();
-  offCtx.translate(s/2, s/2);
+  offCtx.translate(LOGO_SIZE/2, LOGO_SIZE/2);
   offCtx.rotate(angle);
   const text  = "I thought what I'd do was, I'd pretend I was one of those deaf-mutes. ";
   const chars = text.split('');
-  const ringR = (s/2 - 4) * 0.9;
-  const fs    = Math.max(10, s * 0.048);
-  offCtx.font         = `bold ${fs}px 'Courier New', monospace`;
-  offCtx.fillStyle    = '#ffffff';
-  offCtx.textAlign    = 'center';
+  const ringR = (LOGO_SIZE/2 - 4) * 0.9;
+  const fs    = Math.max(10, LOGO_SIZE * 0.048);
+  offCtx.font = `bold ${fs}px 'Courier New', monospace`;
+  offCtx.fillStyle = '#fff';
+  offCtx.textAlign = 'center';
   offCtx.textBaseline = 'middle';
   chars.forEach((char, i) => {
     const a = (i / chars.length) * Math.PI * 2 - Math.PI / 2;
@@ -167,7 +144,6 @@ function drawLaughingMan(cx, cy, r) {
   ctx.drawImage(offCanvas, cx - r, cy - r, r * 2, r * 2);
 }
 
-// ── グリッチエフェクト ──
 function drawGlitchEffect(cx, cy, r, progress) {
   ctx.save();
   ctx.translate(cx, cy);
@@ -175,10 +151,7 @@ function drawGlitchEffect(cx, cy, r, progress) {
     const blocks = Math.floor(28 * (progress / 0.3));
     for (let i = 0; i < blocks; i++) {
       ctx.fillStyle = `rgba(0,229,204,${Math.random() * 0.9})`;
-      ctx.fillRect(
-        (Math.random()-0.5)*r*2.2, (Math.random()-0.5)*r*2.2,
-        Math.random()*r*0.55+r*0.05, Math.random()*r*0.1+r*0.02
-      );
+      ctx.fillRect((Math.random()-0.5)*r*2.2, (Math.random()-0.5)*r*2.2, Math.random()*r*0.55+r*0.05, Math.random()*r*0.1+r*0.02);
     }
     if (Math.random() > 0.3) {
       ctx.beginPath();
@@ -213,7 +186,21 @@ function drawGlitchEffect(cx, cy, r, progress) {
   ctx.restore();
 }
 
-// ── 画面キャプチャ開始 ──
+// モデル読み込み
+async function loadModels() {
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri('.');
+    status.textContent = 'PCのChromeで動作します';
+    startBtn.disabled = false;
+    startBtn.textContent = '画面キャプチャを開始';
+  } catch(e) {
+    status.textContent = 'モデルの読み込みに失敗しました';
+    console.error(e);
+  }
+}
+loadModels();
+
+// キャプチャ開始
 window.startCapture = async function() {
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({
@@ -232,108 +219,76 @@ window.startCapture = async function() {
   await new Promise(r => video.onloadedmetadata = r);
   canvas.width  = video.videoWidth;
   canvas.height = video.videoHeight;
-  // canvasのCSSサイズもvideoに合わせる
-  canvas.style.width  = video.offsetWidth  + 'px';
-  canvas.style.height = video.offsetHeight + 'px';
 
-  stream.getVideoTracks()[0].addEventListener('ended', () => stopCapture());
-  requestAnimationFrame(loop);
+  stream.getVideoTracks()[0].addEventListener('ended', stopCapture);
+
+  // 顔検出を一定間隔で実行
+  detectLoop();
+  requestAnimationFrame(renderLoop);
 };
 
 window.stopCapture = function() {
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = null;
+  lastDetections = [];
   faceStates.clear();
   document.getElementById('container').style.display    = 'none';
   document.getElementById('start-screen').style.display = 'flex';
-  status.textContent = 'PCのChromeで動作します';
 };
 
-// ── メインループ ──
-let detecting = false;
+// 検出ループ（200msごと）
+async function detectLoop() {
+  if (!stream) return;
+  try {
+    const dets = await faceapi.detectAllFaces(
+      video,
+      new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.2 })
+    );
+    lastDetections = dets;
+  } catch(e) {}
+  setTimeout(detectLoop, 200);
+}
 
-async function loop() {
-  requestAnimationFrame(loop);
+// 描画ループ（毎フレーム）
+function renderLoop() {
+  if (!stream) return;
+  requestAnimationFrame(renderLoop);
   frameCount++;
-  if (video.readyState < 2 || !stream) return;
 
-  // canvasをクリア（映像はvideoタグが直接表示）
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // 映像を描画
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // 3フレームに1回検出（負荷軽減）
-  if (!detecting && frameCount % 3 === 0) {
-    detecting = true;
-    try {
-      const detections = await faceapi.detectAllFaces(
-        video,
-        new faceapi.TinyFaceDetectorOptions({
-          inputSize: 608,
-          scoreThreshold: 0.2
-        })
-      );
+  // 前回の検出結果でロゴを描く
+  if (overlayEnabled) {
+    lastDetections.forEach((det, i) => {
+      const box = det.box;
+      const cx  = box.x + box.width  / 2;
+      const cy  = box.y + box.height / 2;
+      const r   = Math.max(box.width, box.height) * 0.65;
 
-      // デバッグ: 検出数を画面に表示
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(10, 10, 220, 30);
-      ctx.fillStyle = '#00ffcc';
-      ctx.font = '14px Courier New';
-      ctx.fillText(`検出数: ${detections.length} / フレーム: ${frameCount}`, 18, 30);
+      if (!faceStates.has(i)) faceStates.set(i, { progress: 0 });
+      const state = faceStates.get(i);
 
-      // デバッグ: 検出した顔に赤枠を表示
-      detections.forEach(det => {
-        const box = det.box;
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(box.x, box.y, box.width, box.height);
-      });
-
-      if (overlayEnabled && detections.length > 0) {
-        detections.forEach((det, i) => {
-          const box = det.box;
-          const cx  = box.x + box.width  / 2;
-          const cy  = box.y + box.height / 2;
-          const r   = Math.max(box.width, box.height) * 0.65;
-
-          if (!faceStates.has(i)) faceStates.set(i, { progress: 0, lastFrame: frameCount });
-          const state = faceStates.get(i);
-          state.lastFrame = frameCount;
-
-          if (state.progress >= 1) {
-            drawLaughingMan(cx, cy, r);
-          } else {
-            state.progress = Math.min(1, state.progress + 0.015);
-            drawGlitchEffect(cx, cy, r, state.progress);
-          }
-        });
+      if (state.progress >= 1) {
+        drawLaughingMan(cx, cy, r);
       } else {
-        faceStates.forEach((state, key) => {
-          if (frameCount - state.lastFrame > 10) faceStates.delete(key);
-        });
+        state.progress = Math.min(1, state.progress + 0.015);
+        drawGlitchEffect(cx, cy, r, state.progress);
       }
-    } catch(e) { 
-      console.error(e); 
-    } finally {
-      detecting = false;
-    }
-  } else {
-    // 検出待ちの間も前フレームのロゴを描き続ける
-    if (overlayEnabled) {
-      faceStates.forEach((state, i) => {
-        if (frameCount - state.lastFrame < 15 && state.cx !== undefined) {
-          drawLaughingMan(state.cx, state.cy, state.r);
-        }
-      });
-    }
+    });
+
+    if (lastDetections.length === 0) faceStates.clear();
   }
 
   angle += 0.008;
-  if (scanEnabled) drawScanEffect();
+
+  // スキャンエフェクト
+  drawScanEffect();
 }
 
-// ── スキャンエフェクト ──
+// スキャンエフェクト
 let scanY = 0;
 let glitchTimer = 0;
-
 function drawScanEffect() {
   const W = canvas.width, H = canvas.height;
   for (let y = 0; y < H; y += 3) {
@@ -350,7 +305,7 @@ function drawScanEffect() {
   glitchTimer++;
   if (glitchTimer > 180 && Math.random() > 0.97) {
     glitchTimer = 0;
-    for (let i = 0; i < 4 + Math.floor(Math.random()*4); i++) {
+    for (let i = 0; i < 4+Math.floor(Math.random()*4); i++) {
       ctx.fillStyle = `rgba(0,229,204,${0.2+Math.random()*0.4})`;
       ctx.fillRect(Math.random()*W*0.3, Math.random()*H, W*(0.4+Math.random()*0.6), 1+Math.random()*3);
     }
@@ -358,7 +313,6 @@ function drawScanEffect() {
 }
 
 window.toggleOverlay = function() { overlayEnabled = !overlayEnabled; };
-window.toggleScan    = function() { scanEnabled    = !scanEnabled; };
 </script>
 </body>
 </html>
