@@ -211,7 +211,7 @@ async function initDetector() {
   );
   faceDetector = await FaceDetector.createFromOptions(vision, {
     baseOptions: {
-      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite',
+      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
       delegate: 'GPU'
     },
     runningMode: 'VIDEO',
@@ -219,6 +219,11 @@ async function initDetector() {
   });
   status.textContent = '検出中…';
 }
+
+// 顔検出用の縮小Canvas（小さい顔を検出しやすくするため）
+const detectCanvas = document.createElement('canvas');
+const detectCtx = detectCanvas.getContext('2d');
+const DETECT_SCALE = 0.5; // 50%に縮小して検出
 
 // ── 画面キャプチャ開始 ──
 window.startCapture = async function() {
@@ -271,13 +276,19 @@ async function loop() {
   if (faceDetector && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     try {
-      const result = faceDetector.detectForVideo(video, performance.now());
+      // 縮小Canvasに映像を描画して顔検出（小さい顔を相対的に大きく見せる）
+      detectCanvas.width  = Math.floor(canvas.width  * DETECT_SCALE);
+      detectCanvas.height = Math.floor(canvas.height * DETECT_SCALE);
+      detectCtx.drawImage(canvas, 0, 0, detectCanvas.width, detectCanvas.height);
+
+      const result = faceDetector.detectForVideo(detectCanvas, performance.now());
       if (overlayEnabled && result.detections.length > 0) {
         result.detections.forEach((det, i) => {
           const bb = det.boundingBox;
-          const cx = bb.originX + bb.width / 2;
-          const cy = bb.originY + bb.height / 2;
-          const r  = Math.max(bb.width, bb.height) * 0.65;
+          // 縮小分を元のサイズに戻す
+          const cx = (bb.originX + bb.width  / 2) / DETECT_SCALE;
+          const cy = (bb.originY + bb.height / 2) / DETECT_SCALE;
+          const r  = Math.max(bb.width, bb.height) / DETECT_SCALE * 0.65;
 
           if (!faceStates.has(i)) faceStates.set(i, { progress: 0, lastFrame: frameCount });
           const state = faceStates.get(i);
